@@ -298,8 +298,8 @@ Deno.serve(async (req) => {
     await supabase
       .from('on_duty_schedule')
       .delete()
-      .gte('starts_at', startsAt)
-      .lte('ends_at', endsAt);
+      .gte('start_at', startsAt)
+      .lte('end_at', endsAt);
 
     // Fetch pharmacy IDs for the scraped names
     const names = pharmacies.map((p) => p.name);
@@ -311,8 +311,8 @@ Deno.serve(async (req) => {
 
     const scheduleRows = (rows || []).map((p) => ({
       pharmacy_id: p.id,
-      starts_at: startsAt,
-      ends_at: endsAt,
+      start_at: startsAt,
+      end_at: endsAt,
     }));
 
     if (scheduleRows.length > 0) {
@@ -340,10 +340,15 @@ Deno.serve(async (req) => {
         },
       }
     );
-  } catch (err) {
-    console.error('Sync failed:', err);
+  } catch (err: unknown) {
+    const msg = err instanceof Error
+      ? err.message
+      : (err as Record<string, unknown>)?.message
+        ? JSON.stringify(err)
+        : String(err);
+    console.error('Sync failed:', msg, err);
     return new Response(
-      JSON.stringify({ ok: false, error: String(err) }),
+      JSON.stringify({ ok: false, error: msg, detail: JSON.stringify(err) }),
       {
         status: 500,
         headers: {

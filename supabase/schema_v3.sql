@@ -2,8 +2,10 @@
 -- À exécuter dans Supabase SQL Editor après schema_v2.sql
 
 -- Contrainte unique (name, commune) — permet l'upsert idempotent depuis l'Edge Function
-alter table pharmacies
-  add constraint if not exists pharmacies_name_commune_key unique (name, commune);
+do $$ begin
+  alter table pharmacies add constraint pharmacies_name_commune_key unique (name, commune);
+exception when duplicate_object then null;
+end $$;
 
 -- L'Edge Function tourne avec le service role key et doit bypasser RLS
 -- (le service role bypasse RLS automatiquement dans Supabase — aucune action requise)
