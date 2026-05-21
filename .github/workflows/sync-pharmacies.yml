@@ -1,0 +1,37 @@
+name: Sync On-Duty Pharmacies
+
+on:
+  schedule:
+    # Every day at 01:00 UTC (01:00 Abidjan time — UTC+0)
+    - cron: '0 1 * * *'
+  workflow_dispatch: # allow manual trigger from GitHub UI
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call sync-pharmacies Edge Function
+        run: |
+          RESPONSE=$(curl -s -o /tmp/response.json -w "%{http_code}" \
+            -X POST \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}" \
+            -H "Content-Type: application/json" \
+            "${{ secrets.SUPABASE_URL }}/functions/v1/sync-pharmacies")
+
+          echo "HTTP status: $RESPONSE"
+          echo "Response body:"
+          cat /tmp/response.json
+
+          if [ "$RESPONSE" != "200" ]; then
+            echo "Sync failed with status $RESPONSE"
+            exit 1
+          fi
+
+          OK=$(cat /tmp/response.json | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('ok','false'))")
+          if [ "$OK" != "True" ]; then
+            echo "Sync returned ok=false"
+            cat /tmp/response.json
+            exit 1
+          fi
+
+          echo "Sync successful!"

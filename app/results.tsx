@@ -11,24 +11,32 @@ import {
 } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { fetchOnDutyPharmacies } from '../src/lib/pharmacies';
+import PharmacyMap from '../src/components/PharmacyMap';
 import type { PharmacyWithDistance, UserLocation } from '../src/types/pharmacy';
 import { colors, radius, spacing } from '../src/theme';
 
-const ABIDJAN_CENTER = { latitude: 5.3599, longitude: -4.0083 };
+const ABIDJAN_CENTER: UserLocation = { latitude: 5.3599, longitude: -4.0083, source: 'manual' };
+
+type ViewMode = 'list' | 'map';
 
 export default function Results() {
-  const params = useLocalSearchParams<{ lat?: string; lng?: string; commune?: string }>();
+  const params = useLocalSearchParams<{
+    lat?: string; lng?: string; commune?: string;
+    medication?: string; aiQuery?: string; aiSource?: string;
+  }>();
   const [items, setItems] = useState<PharmacyWithDistance[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [mode, setMode] = useState<ViewMode>('list');
+
+  const userLocation: UserLocation = {
+    latitude: params.lat ? Number(params.lat) : ABIDJAN_CENTER.latitude,
+    longitude: params.lng ? Number(params.lng) : ABIDJAN_CENTER.longitude,
+    source: params.lat ? 'gps' : 'manual',
+  };
 
   useEffect(() => {
-    const user: UserLocation = {
-      latitude: params.lat ? Number(params.lat) : ABIDJAN_CENTER.latitude,
-      longitude: params.lng ? Number(params.lng) : ABIDJAN_CENTER.longitude,
-      source: params.lat ? 'gps' : 'manual',
-    };
-    fetchOnDutyPharmacies(user, { commune: params.commune })
+    fetchOnDutyPharmacies(userLocation, { commune: params.commune })
       .then(setItems)
       .catch((e) => setError(e.message ?? 'Erreur de chargement'))
       .finally(() => setLoading(false));
@@ -67,13 +75,64 @@ export default function Results() {
   }
 
   return (
-    <FlatList
-      data={items}
-      keyExtractor={(p) => p.id}
-      contentContainerStyle={{ padding: spacing.lg }}
-      ItemSeparatorComponent={() => <View style={{ height: spacing.md }} />}
-      renderItem={({ item }) => <PharmacyCard item={item} />}
-    />
+    <View style={{ flex: 1 }}>
+      {params.aiQuery ? (
+        <View style={styles.intentBanner}>
+          <Text style={styles.intentText} numberOfLines={1}>
+            {params.aiSource === 'ai' ? '✨' : '🔍'} « {params.aiQuery} »
+          </Text>
+          {params.commune ? <Text style={styles.intentTag}>{params.commune}</Text> : null}
+          {params.medication ? <Text style={styles.intentTag}>💊 {params.medication}</Text> : null}
+        </View>
+      ) : null}
+      <ViewToggle mode={mode} onChange={setMode} count={items.length} />
+
+      {mode === 'list' ? (
+        <FlatList
+          data={items}
+          keyExtractor={(p) => p.id}
+          contentContainerStyle={{ padding: spacing.lg }}
+          ItemSeparatorComponent={() => <View style={{ height: spacing.md }} />}
+          renderItem={({ item }) => <PharmacyCard item={item} />}
+        />
+      ) : (
+        <PharmacyMap pharmacies={items} userLocation={userLocation} />
+      )}
+    </View>
+  );
+}
+
+function ViewToggle({
+  mode,
+  onChange,
+  count,
+}: {
+  mode: ViewMode;
+  onChange: (m: ViewMode) => void;
+  count: number;
+}) {
+  return (
+    <View style={styles.toggle}>
+      <Text style={styles.toggleCount}>{count} pharmacie{count > 1 ? 's' : ''}</Text>
+      <View style={styles.toggleButtons}>
+        <Pressable
+          style={[styles.toggleBtn, mode === 'list' && styles.toggleBtnActive]}
+          onPress={() => onChange('list')}
+        >
+          <Text style={[styles.toggleBtnText, mode === 'list' && styles.toggleBtnTextActive]}>
+            📋 Liste
+          </Text>
+        </Pressable>
+        <Pressable
+          style={[styles.toggleBtn, mode === 'map' && styles.toggleBtnActive]}
+          onPress={() => onChange('map')}
+        >
+          <Text style={[styles.toggleBtnText, mode === 'map' && styles.toggleBtnTextActive]}>
+            🗺️ Carte
+          </Text>
+        </Pressable>
+      </View>
+    </View>
   );
 }
 
@@ -117,6 +176,32 @@ function PharmacyCard({ item }: { item: PharmacyWithDistance }) {
 
 const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.lg },
+  toggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    backgroundColor: colors.card,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  toggleCount: { fontSize: 13, color: colors.textMuted, fontWeight: '600' },
+  toggleButtons: {
+    flexDirection: 'row',
+    backgroundColor: colors.bg,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    overflow: 'hidden',
+  },
+  toggleBtn: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+  },
+  toggleBtnActive: { backgroundColor: colors.primary },
+  toggleBtnText: { fontSize: 13, fontWeight: '600', color: colors.textMuted },
+  toggleBtnTextActive: { color: '#fff' },
   card: {
     backgroundColor: colors.card,
     borderRadius: radius.lg,
@@ -151,4 +236,25 @@ const styles = StyleSheet.create({
   errorBody: { color: colors.text, textAlign: 'center', marginBottom: spacing.md },
   errorHint: { color: colors.textMuted, textAlign: 'center', fontSize: 13 },
   emptyTitle: { fontSize: 16, fontWeight: '700', color: colors.text, marginBottom: spacing.sm },
+  intentBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: spacing.xs as unknown as number,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    backgroundColor: '#F0FDF4',
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  intentText: { fontSize: 13, color: colors.textMuted, fontStyle: 'italic', flex: 1 },
+  intentTag: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.primary,
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: radius.pill,
+  },
 });
