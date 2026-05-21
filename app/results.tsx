@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -7,13 +7,16 @@ import {
   Pressable,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
+import { Stack } from 'expo-router';
 import { fetchOnDutyPharmacies } from '../src/lib/pharmacies';
 import PharmacyMap from '../src/components/PharmacyMap';
 import type { PharmacyWithDistance, UserLocation } from '../src/types/pharmacy';
 import { colors, radius, shadow, spacing } from '../src/theme';
+import BottomNav from '../src/components/BottomNav';
 
 const ABIDJAN_CENTER: UserLocation = { latitude: 5.3599, longitude: -4.0083, source: 'manual' };
 type ViewMode = 'list' | 'map';
@@ -23,10 +26,11 @@ export default function Results() {
     lat?: string; lng?: string; commune?: string;
     medication?: string; aiQuery?: string; aiSource?: string;
   }>();
-  const [items, setItems]   = useState<PharmacyWithDistance[]>([]);
-  const [loading, setLoad]  = useState(true);
-  const [error, setError]   = useState<string | null>(null);
-  const [mode, setMode]     = useState<ViewMode>('list');
+  const [items, setItems]     = useState<PharmacyWithDistance[]>([]);
+  const [loading, setLoad]    = useState(true);
+  const [error, setError]     = useState<string | null>(null);
+  const [mode, setMode]       = useState<ViewMode>('list');
+  const [filterText, setFilter] = useState(params.commune ?? '');
 
   const userLocation: UserLocation = {
     latitude:  params.lat ? Number(params.lat) : ABIDJAN_CENTER.latitude,
@@ -35,97 +39,82 @@ export default function Results() {
   };
 
   useEffect(() => {
+    setLoad(true);
     fetchOnDutyPharmacies(userLocation, { commune: params.commune })
       .then(setItems)
-      .catch((e) => setError(e.message ?? 'Erreur de chargement'))
+      .catch((e) => setError(e.message ?? 'Erreur'))
       .finally(() => setLoad(false));
   }, [params.lat, params.lng, params.commune]);
 
-  if (loading) {
-    return (
-      <View style={styles.center}>
-        <View style={styles.loadingIcon}><Text style={{ fontSize: 32 }}>💊</Text></View>
-        <ActivityIndicator color={colors.primary} size="large" style={{ marginTop: spacing.lg }} />
-        <Text style={styles.loadingText}>Recherche des pharmacies…</Text>
-      </View>
-    );
-  }
-
-  if (error) {
-    return (
-      <View style={styles.center}>
-        <Text style={{ fontSize: 48, marginBottom: spacing.lg }}>⚠️</Text>
-        <Text style={styles.errorTitle}>Impossible de charger</Text>
-        <Text style={styles.errorBody}>{error}</Text>
-      </View>
-    );
-  }
-
-  if (items.length === 0) {
-    return (
-      <View style={styles.center}>
-        <Text style={{ fontSize: 48, marginBottom: spacing.lg }}>🔍</Text>
-        <Text style={styles.emptyTitle}>Aucune pharmacie trouvée</Text>
-        <Text style={styles.errorBody}>
-          {params.commune ? `Aucun résultat pour "${params.commune}"` : 'Essaie une autre commune'}
-        </Text>
-        <Pressable style={styles.backBtn} onPress={() => router.back()}>
-          <Text style={styles.backBtnText}>← Retour</Text>
-        </Pressable>
-      </View>
-    );
-  }
+  const filtered = filterText
+    ? items.filter(p => p.commune.toLowerCase().includes(filterText.toLowerCase()) || p.name.toLowerCase().includes(filterText.toLowerCase()))
+    : items;
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.bg }}>
+    <View style={styles.root}>
+      <Stack.Screen options={{ headerShown: false }} />
 
-      {/* Intent banner */}
-      {params.aiQuery ? (
-        <View style={styles.intentBanner}>
-          <Text style={styles.intentIcon}>{params.aiSource === 'ai' ? '✨' : '🔍'}</Text>
-          <Text style={styles.intentText} numberOfLines={1}>« {params.aiQuery} »</Text>
-          {params.commune   && <View style={styles.intentTag}><Text style={styles.intentTagText}>{params.commune}</Text></View>}
-          {params.medication && <View style={styles.intentTag}><Text style={styles.intentTagText}>💊 {params.medication}</Text></View>}
+      {/* ── Header custom ── */}
+      <View style={styles.header}>
+        <Pressable style={styles.backBtn} onPress={() => router.back()}>
+          <Text style={styles.backIcon}>←</Text>
+        </Pressable>
+        <Text style={styles.headerTitle}>Pharmacies proches</Text>
+        <Pressable style={styles.filterBtn}>
+          <Text style={styles.filterIcon}>⚙</Text>
+        </Pressable>
+      </View>
+
+      {/* ── Barre de filtre ── */}
+      <View style={styles.filterBar}>
+        <View style={styles.filterInput}>
+          <Text style={styles.filterSearchIcon}>🔍</Text>
+          <TextInput
+            value={filterText}
+            onChangeText={setFilter}
+            placeholder="Rechercher une commune..."
+            placeholderTextColor={colors.textMuted}
+            style={styles.filterTextInput}
+          />
         </View>
-      ) : null}
-
-      {/* Toggle liste / carte */}
-      <View style={styles.toolbar}>
-        <Text style={styles.toolbarCount}>
-          <Text style={styles.toolbarCountNum}>{items.length}</Text>
-          {' '}pharmacie{items.length > 1 ? 's' : ''}
-        </Text>
-        <View style={styles.toggle}>
-          <Pressable
-            style={[styles.toggleBtn, mode === 'list' && styles.toggleBtnActive]}
-            onPress={() => setMode('list')}
-          >
-            <Text style={[styles.toggleBtnText, mode === 'list' && styles.toggleBtnTextActive]}>
-              Liste
-            </Text>
+        <View style={styles.togglePill}>
+          <Pressable style={[styles.toggleBtn, mode === 'list' && styles.toggleBtnActive]} onPress={() => setMode('list')}>
+            <Text style={[styles.toggleText, mode === 'list' && styles.toggleTextActive]}>≡ Liste</Text>
           </Pressable>
-          <Pressable
-            style={[styles.toggleBtn, mode === 'map' && styles.toggleBtnActive]}
-            onPress={() => setMode('map')}
-          >
-            <Text style={[styles.toggleBtnText, mode === 'map' && styles.toggleBtnTextActive]}>
-              Carte
-            </Text>
+          <Pressable style={[styles.toggleBtn, mode === 'map' && styles.toggleBtnActive]} onPress={() => setMode('map')}>
+            <Text style={[styles.toggleText, mode === 'map' && styles.toggleTextActive]}>⊞ Carte</Text>
           </Pressable>
         </View>
       </View>
 
-      {mode === 'list' ? (
-        <FlatList
-          data={items}
-          keyExtractor={(p) => p.id}
-          contentContainerStyle={{ padding: spacing.lg, gap: spacing.md as unknown as number }}
-          showsVerticalScrollIndicator={false}
-          renderItem={({ item }) => <PharmacyCard item={item} />}
-        />
+      {loading ? (
+        <View style={styles.center}>
+          <ActivityIndicator color={colors.primary} size="large" />
+          <Text style={styles.loadingText}>Recherche des pharmacies…</Text>
+        </View>
+      ) : error ? (
+        <View style={styles.center}>
+          <Text style={styles.errorText}>{error}</Text>
+        </View>
+      ) : mode === 'map' ? (
+        <PharmacyMap pharmacies={filtered} userLocation={userLocation} />
       ) : (
-        <PharmacyMap pharmacies={items} userLocation={userLocation} />
+        <>
+          <Text style={styles.countLabel}>
+            <Text style={styles.countNum}>{filtered.length}</Text>
+            {' '}résultat{filtered.length > 1 ? 's' : ''}
+          </Text>
+          <FlatList
+            data={filtered}
+            keyExtractor={(p) => p.id}
+            contentContainerStyle={styles.list}
+            showsVerticalScrollIndicator={false}
+            renderItem={({ item }) => <PharmacyCard item={item} />}
+          />
+        </>
       )}
+
+      <BottomNav />
     </View>
   );
 }
@@ -143,143 +132,183 @@ function PharmacyCard({ item }: { item: PharmacyWithDistance }) {
 
   return (
     <View style={styles.card}>
-      {/* Indicateur coloré à gauche */}
-      <View style={[styles.cardAccent, item.is_on_duty_now && styles.cardAccentActive]} />
-
-      <View style={styles.cardBody}>
-        {/* En-tête */}
-        <View style={styles.cardHeader}>
-          <Text style={styles.cardTitle} numberOfLines={1}>{item.name}</Text>
-          {item.is_on_duty_now && (
-            <View style={styles.badge}>
-              <Text style={styles.badgeText}>● De garde</Text>
-            </View>
-          )}
+      {/* En-tête carte */}
+      <View style={styles.cardTop}>
+        <View style={styles.cardTitleRow}>
+          <Text style={styles.cardName} numberOfLines={1}>{item.name}</Text>
+          <Text style={styles.cardDist}>{item.distance_km.toFixed(1)} km</Text>
         </View>
-
-        {/* Méta */}
-        <View style={styles.cardMeta}>
-          <View style={styles.metaChip}>
-            <Text style={styles.metaChipText}>📍 {item.commune}</Text>
+        {item.is_on_duty_now && (
+          <View style={styles.dutyBadge}>
+            <View style={styles.dutyDot} />
+            <Text style={styles.dutyText}>De garde</Text>
           </View>
-          <View style={styles.metaChip}>
-            <Text style={styles.metaChipText}>🛣 {item.distance_km.toFixed(1)} km</Text>
-          </View>
-        </View>
-
-        {/* Actions */}
-        <View style={styles.actions}>
-          <Pressable style={styles.actionPrimary} onPress={openMaps}>
-            <Text style={styles.actionPrimaryText}>🗺️  Itinéraire</Text>
-          </Pressable>
-          {item.phone && (
-            <Pressable style={styles.actionSecondary} onPress={call}>
-              <Text style={styles.actionSecondaryText}>📞  Appeler</Text>
-            </Pressable>
-          )}
-        </View>
+        )}
       </View>
+
+      {/* Adresse */}
+      {item.address ? (
+        <View style={styles.addressRow}>
+          <Text style={styles.addressIcon}>📍</Text>
+          <Text style={styles.addressText} numberOfLines={1}>{item.address}, {item.commune}</Text>
+        </View>
+      ) : (
+        <View style={styles.addressRow}>
+          <Text style={styles.addressIcon}>📍</Text>
+          <Text style={styles.addressText}>{item.commune}</Text>
+        </View>
+      )}
+
+      {/* Ligne ouvert */}
+      <View style={styles.metaRow}>
+        <Text style={styles.distIcon}>🛣</Text>
+        <Text style={styles.distText}>{item.distance_km.toFixed(1)} km</Text>
+        {item.is_on_duty_now && <Text style={styles.openText}>  Ouvert</Text>}
+      </View>
+
+      {/* Actions */}
+      <View style={styles.actions}>
+        <Pressable style={styles.btnPrimary} onPress={openMaps}>
+          <Text style={styles.btnPrimaryIcon}>🗺️</Text>
+          <Text style={styles.btnPrimaryText}>Itinéraire</Text>
+        </Pressable>
+        {item.phone && (
+          <Pressable style={styles.btnSecondary} onPress={call}>
+            <Text style={styles.btnSecondaryIcon}>📞</Text>
+            <Text style={styles.btnSecondaryText}>Appeler</Text>
+          </Pressable>
+        )}
+      </View>
+
+      {/* Pied de carte */}
+      {item.is_on_duty_now && (
+        <Text style={styles.openUntil}>Ouvert jusqu'à 08h</Text>
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xl, backgroundColor: colors.bg },
-  loadingIcon: {
-    width: 80, height: 80, borderRadius: 40,
+  root: { flex: 1, backgroundColor: colors.bg },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xl },
+  loadingText: { marginTop: spacing.md, color: colors.textMuted, fontSize: 14 },
+  errorText: { color: colors.accent, fontSize: 15, textAlign: 'center' },
+
+  // Header
+  header: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: '#fff',
+    paddingTop: 52, paddingBottom: spacing.md,
+    paddingHorizontal: spacing.md,
+    ...shadow.sm,
+  },
+  backBtn: {
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: colors.bg,
+    alignItems: 'center', justifyContent: 'center',
+    marginRight: spacing.sm,
+  },
+  backIcon: { fontSize: 18, color: colors.text, fontWeight: '600' },
+  headerTitle: { flex: 1, fontSize: 17, fontWeight: '700', color: colors.text, textAlign: 'center' },
+  filterBtn: {
+    width: 36, height: 36, borderRadius: 18,
     backgroundColor: colors.primaryLight,
     alignItems: 'center', justifyContent: 'center',
-    ...shadow.md,
+    marginLeft: spacing.sm,
   },
-  loadingText: { marginTop: spacing.md, color: colors.textMuted, fontSize: 15, fontWeight: '500' },
-  errorTitle: { fontSize: 18, fontWeight: '700', color: colors.text, marginBottom: spacing.sm },
-  errorBody:  { color: colors.textMuted, textAlign: 'center', fontSize: 14, lineHeight: 20 },
-  emptyTitle: { fontSize: 18, fontWeight: '700', color: colors.text, marginBottom: spacing.sm },
-  backBtn: {
-    marginTop: spacing.xl,
-    backgroundColor: colors.primary,
-    paddingHorizontal: spacing.xl,
-    paddingVertical: 12,
-    borderRadius: radius.pill,
-  },
-  backBtnText: { color: '#fff', fontWeight: '700' },
+  filterIcon: { fontSize: 16, color: colors.primary },
 
-  // Intent banner
-  intentBanner: {
-    flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap',
-    gap: spacing.xs as unknown as number,
-    paddingHorizontal: spacing.lg, paddingVertical: 10,
-    backgroundColor: colors.primaryLight,
-    borderBottomWidth: 1, borderBottomColor: colors.border,
-  },
-  intentIcon: { fontSize: 14 },
-  intentText: { fontSize: 13, color: colors.primaryDark, fontStyle: 'italic', flex: 1 },
-  intentTag: {
-    backgroundColor: colors.primary,
-    borderRadius: radius.pill,
-    paddingHorizontal: spacing.sm, paddingVertical: 2,
-  },
-  intentTagText: { fontSize: 11, fontWeight: '700', color: '#fff' },
-
-  // Toolbar
-  toolbar: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg, paddingVertical: 10,
+  // Filter bar
+  filterBar: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
     backgroundColor: '#fff',
+    gap: spacing.sm as unknown as number,
     borderBottomWidth: 1, borderBottomColor: colors.borderLight,
   },
-  toolbarCount: { fontSize: 14, color: colors.textMuted, fontWeight: '500' },
-  toolbarCountNum: { fontWeight: '800', color: colors.text, fontSize: 16 },
-  toggle: {
+  filterInput: {
+    flex: 1, flexDirection: 'row', alignItems: 'center',
+    backgroundColor: colors.bg,
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 9,
+    gap: spacing.xs as unknown as number,
+  },
+  filterSearchIcon: { fontSize: 14 },
+  filterTextInput: { flex: 1, fontSize: 14, color: colors.text },
+  togglePill: {
     flexDirection: 'row',
     backgroundColor: colors.bg,
     borderRadius: radius.pill,
-    padding: 3,
+    padding: 2,
     borderWidth: 1, borderColor: colors.border,
   },
-  toggleBtn: { paddingHorizontal: 16, paddingVertical: 6, borderRadius: radius.pill },
+  toggleBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: radius.pill },
   toggleBtnActive: { backgroundColor: colors.primary },
-  toggleBtnText: { fontSize: 13, fontWeight: '600', color: colors.textMuted },
-  toggleBtnTextActive: { color: '#fff' },
+  toggleText: { fontSize: 12, fontWeight: '600', color: colors.textMuted },
+  toggleTextActive: { color: '#fff' },
+
+  countLabel: {
+    fontSize: 13, color: colors.textMuted,
+    paddingHorizontal: spacing.lg, paddingVertical: spacing.sm,
+  },
+  countNum: { fontWeight: '800', color: colors.text },
+
+  list: { paddingHorizontal: spacing.lg, paddingBottom: spacing.xl, gap: spacing.md as unknown as number },
 
   // Card
   card: {
-    flexDirection: 'row',
     backgroundColor: '#fff',
     borderRadius: radius.lg,
-    overflow: 'hidden',
+    padding: spacing.lg,
     ...shadow.sm,
   },
-  cardAccent: { width: 4, backgroundColor: colors.border },
-  cardAccentActive: { backgroundColor: colors.primary },
-  cardBody: { flex: 1, padding: spacing.lg },
-  cardHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.sm },
-  cardTitle: { fontSize: 15, fontWeight: '700', color: colors.text, flex: 1, marginRight: spacing.sm },
-  badge: {
-    backgroundColor: colors.primaryLight,
-    paddingHorizontal: spacing.sm, paddingVertical: 3,
-    borderRadius: radius.pill,
+  cardTop: {
+    flexDirection: 'row', alignItems: 'flex-start',
+    justifyContent: 'space-between', marginBottom: spacing.sm,
   },
-  badgeText: { color: colors.primary, fontSize: 11, fontWeight: '700' },
-  cardMeta: { flexDirection: 'row', gap: spacing.sm as unknown as number, marginBottom: spacing.md },
-  metaChip: {
-    backgroundColor: colors.bg,
+  cardTitleRow: { flex: 1, marginRight: spacing.sm },
+  cardName: { fontSize: 16, fontWeight: '800', color: colors.text },
+  cardDist: { fontSize: 13, color: colors.textMuted, fontWeight: '500', marginTop: 2 },
+  dutyBadge: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: colors.successLight,
     borderRadius: radius.pill,
     paddingHorizontal: spacing.sm, paddingVertical: 4,
+    gap: 4 as unknown as number,
   },
-  metaChipText: { fontSize: 12, color: colors.textSecondary, fontWeight: '500' },
-  actions: { flexDirection: 'row', gap: spacing.sm as unknown as number },
-  actionPrimary: {
-    flex: 1, backgroundColor: colors.primary,
-    borderRadius: radius.md, paddingVertical: 10,
-    alignItems: 'center', justifyContent: 'center',
+  dutyDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.success },
+  dutyText: { fontSize: 12, fontWeight: '700', color: colors.successDark },
+
+  addressRow: {
+    flexDirection: 'row', alignItems: 'center',
+    gap: 4 as unknown as number, marginBottom: 6,
   },
-  actionPrimaryText: { color: '#fff', fontWeight: '700', fontSize: 13 },
-  actionSecondary: {
-    flex: 1, backgroundColor: colors.bg,
-    borderRadius: radius.md, paddingVertical: 10,
-    alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1, borderColor: colors.border,
+  addressIcon: { fontSize: 12 },
+  addressText: { fontSize: 13, color: colors.textMuted, flex: 1 },
+
+  metaRow: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.md },
+  distIcon: { fontSize: 12, marginRight: 4 },
+  distText: { fontSize: 13, color: colors.textMuted, fontWeight: '500' },
+  openText: { fontSize: 13, color: colors.success, fontWeight: '600' },
+
+  actions: { flexDirection: 'row', gap: spacing.sm as unknown as number, marginBottom: spacing.sm },
+  btnPrimary: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: colors.primary,
+    borderRadius: radius.md, paddingVertical: 11,
+    gap: 6 as unknown as number,
   },
-  actionSecondaryText: { color: colors.text, fontWeight: '600', fontSize: 13 },
+  btnPrimaryIcon: { fontSize: 14 },
+  btnPrimaryText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  btnSecondary: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: '#fff', borderRadius: radius.md, paddingVertical: 11,
+    borderWidth: 1.5, borderColor: colors.border,
+    gap: 6 as unknown as number,
+  },
+  btnSecondaryIcon: { fontSize: 14 },
+  btnSecondaryText: { color: colors.text, fontWeight: '600', fontSize: 14 },
+
+  openUntil: { fontSize: 12, color: colors.success, fontWeight: '600', marginTop: 4 },
 });
